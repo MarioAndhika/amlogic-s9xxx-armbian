@@ -291,16 +291,16 @@ jobs:
           sudo chown -R runner.runner /builder
           df -Th
 
-      - name: Download source code
-        id: down
-        working-directory: /builder
-        if: ${{ steps.init.outputs.status }} == 'success' && !cancelled()
+      - name: Compile Armbian [ ${{ inputs.set_release }} ]
+        id: compile
+        if: ${{ steps.down.outputs.status }} == 'success' && !cancelled()
         run: |
-          df -hT ${PWD}
-          git clone -q --single-branch --depth=1 --branch=main https://github.com/armbian/build.git build
-          ln -sf /builder/build ${GITHUB_WORKSPACE}/build
-          ln -sf /builder/build /home/runner/work/_actions/ophub/amlogic-s9xxx-armbian/main/build
-          echo "status=success" >> ${GITHUB_OUTPUT}
+              # Compile method and parameter description: https://docs.armbian.com/Developer-Guide_Build-Options
+              cd build/
+              ./compile.sh RELEASE=${{ inputs.set_release }} BOARD=odroidn2 BRANCH=current BUILD_MINIMAL=no \
+                      BUILD_ONLY=default HOST=armbian BUILD_DESKTOP=no EXPERT=yes KERNEL_CONFIGURE=no \
+                      COMPRESS_OUTPUTIMAGE="sha" SHARE_LOG=yes
+               echo "status=success" >> ${GITHUB_OUTPUT}
 
       - name: Compile Armbian [ ${{ inputs.set_release }} ]
         id: compile
@@ -314,16 +314,18 @@ jobs:
                            COMPRESS_OUTPUTIMAGE="sha" SHARE_LOG=yes
           echo "status=success" >> ${GITHUB_OUTPUT}
 
-      - name: Compile Armbian [ ${{ inputs.set_release }} ]
-        id: compile
-        if: ${{ steps.down.outputs.status }} == 'success' && !cancelled()
+      - name: Organize files and clear space
+        id: clean
+        if: ${{ steps.compile.outputs.status }} == 'success' && !cancelled()
         run: |
-          # Compile method and parameter description: https://docs.armbian.com/Developer-Guide_Build-Options
-          cd build/
-                ./compile.sh RELEASE=${{ inputs.set_release }} BOARD=odroidn2 BRANCH=current BUILD_MINIMAL=no \
-                      BUILD_ONLY=default HOST=armbian BUILD_DESKTOP=no EXPERT=yes KERNEL_CONFIGURE=no \
-                      COMPRESS_OUTPUTIMAGE="sha" SHARE_LOG=yes
-            echo "status=success" >> ${GITHUB_OUTPUT}
+          # Organize and keep essential files, delete unnecessary files
+          chmod +x ${ROOTFS_SCRIPT}
+          ${ROOTFS_SCRIPT} -v ${{ inputs.set_release }}
+
+          # Output cleaning result information
+          df -hT ${PWD}
+          echo "build_tag=Armbian_${{ inputs.set_release }}_${{ inputs.armbian_storage }}_$(date +"%Y.%m")" >> ${GITHUB_OUTPUT}
+          echo "status=success" >> ${GITHUB_OUTPUT}
 
       - name: Upload Armbian image to Release
         uses: ncipollo/release-action@main
